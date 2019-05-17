@@ -7,10 +7,11 @@ from dataset import KnowledgeGraph
 
 
 class TransE:
-    def __init__(self, kg: KnowledgeGraph,
+    def __init__(self, kg, model_path,
                  embedding_dim, margin_value, score_func,
                  batch_size, learning_rate, n_generator, n_rank_calculator):
         self.kg = kg
+        self.model_path = model_path
         self.embedding_dim = embedding_dim
         self.margin_value = margin_value
         self.score_func = score_func
@@ -107,7 +108,7 @@ class TransE:
                                                      k=self.kg.n_entity)
         return idx_head_prediction, idx_tail_prediction
 
-    def launch_training(self, session, summary_writer):
+    def launch_training(self, epoch, session, summary_writer, saver):
         raw_batch_queue = mp.Queue()
         training_batch_queue = mp.Queue()
         for _ in range(self.n_generator):
@@ -136,12 +137,29 @@ class TransE:
             print('[{:.3f}s] #triple: {}/{} triple_avg_loss: {:.6f}'.format(timeit.default_timer() - start,
                                                                             n_used_triple,
                                                                             self.kg.n_training_triple,
-                                                                            batch_loss / len(batch_pos)), end='\r')
+                                                                            batch_loss / len(batch_pos)))
         print()
         print('epoch loss: {:.3f}'.format(epoch_loss))
         print('cost time: {:.3f}s'.format(timeit.default_timer() - start))
         print('-----Finish training-----')
+        step_num = epoch * n_batch + n_used_triple + 1
+        saver.save(session, self.model_path, global_step=step_num)
         self.check_norm(session=session)
+
+    def launch_prediction(self, session):
+        eval_result_queue = mp.JoinableQueue()
+        rank_result_queue = mp.Queue()
+        print('-----Start evaluation-----')
+        start = timeit.default_timer()
+        for _ in range(self.n_rank_calculator):
+            mp.Process(target=self.calculate_rank, kwargs={'in_queue': eval_result_queue,
+                                                           'out_queue': rank_result_queue}).start()
+        n_used_eval_triple = 0
+        for eval_triple in self.kg.test_triples:
+            idx_head_prediction, idx_tail_prediction = session.run(fetches=[self.idx_head_prediction,
+                                                                            self.idx_tail_prediction],
+                                                                   feed_dict={self.eval_triple: eval_triple})
+            eval_result_queue.put((eval_triple, idx_head_prediction, idx_tail_prediction))
 
     def launch_evaluation(self, session):
         eval_result_queue = mp.JoinableQueue()
@@ -160,7 +178,7 @@ class TransE:
             n_used_eval_triple += 1
             print('[{:.3f}s] #evaluation triple: {}/{}'.format(timeit.default_timer() - start,
                                                                n_used_eval_triple,
-                                                               self.kg.n_test_triple), end='\r')
+                                                               self.kg.n_test_triple))
         print()
         for _ in range(self.n_rank_calculator):
             eval_result_queue.put(None)
