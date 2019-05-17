@@ -160,6 +160,8 @@ class TransE:
             print('[{:.3f}s] #evaluation triple: {}/{}'.format(timeit.default_timer() - start,
                                                                n_used_eval_triple,
                                                                self.kg.n_test_triple))
+            idx_head_prediction = idx_head_prediction[::-1]
+            idx_tail_prediction = idx_tail_prediction[::-1]
             print(eval_triple, idx_head_prediction[:self.hit_at_n], idx_tail_prediction[:self.hit_at_n])
         print('-----Finish prediction-----')
 
