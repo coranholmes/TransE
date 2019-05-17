@@ -9,7 +9,7 @@ from dataset import KnowledgeGraph
 class TransE:
     def __init__(self, kg, model_path,
                  embedding_dim, margin_value, score_func,
-                 batch_size, learning_rate, n_generator, n_rank_calculator):
+                 batch_size, learning_rate, n_generator, n_rank_calculator, hit_at_n):
         self.kg = kg
         self.model_path = model_path
         self.embedding_dim = embedding_dim
@@ -19,6 +19,7 @@ class TransE:
         self.learning_rate = learning_rate
         self.n_generator = n_generator
         self.n_rank_calculator = n_rank_calculator
+        self.hit_at_n = hit_at_n
         '''ops for training'''
         self.triple_pos = tf.placeholder(dtype=tf.int32, shape=[None, 3])
         self.triple_neg = tf.placeholder(dtype=tf.int32, shape=[None, 3])
@@ -147,19 +148,20 @@ class TransE:
         self.check_norm(session=session)
 
     def launch_prediction(self, session):
-        eval_result_queue = mp.JoinableQueue()
-        rank_result_queue = mp.Queue()
         print('-----Start evaluation-----')
         start = timeit.default_timer()
-        for _ in range(self.n_rank_calculator):
-            mp.Process(target=self.calculate_rank, kwargs={'in_queue': eval_result_queue,
-                                                           'out_queue': rank_result_queue}).start()
+
         n_used_eval_triple = 0
         for eval_triple in self.kg.test_triples:
             idx_head_prediction, idx_tail_prediction = session.run(fetches=[self.idx_head_prediction,
                                                                             self.idx_tail_prediction],
                                                                    feed_dict={self.eval_triple: eval_triple})
-            eval_result_queue.put((eval_triple, idx_head_prediction, idx_tail_prediction))
+            n_used_eval_triple += 1
+            print('[{:.3f}s] #evaluation triple: {}/{}'.format(timeit.default_timer() - start,
+                                                               n_used_eval_triple,
+                                                               self.kg.n_test_triple))
+            print(eval_triple, idx_head_prediction[:self.hit_at_n], idx_tail_prediction[:self.hit_at_n])
+        print('-----Finish prediction-----')
 
     def launch_evaluation(self, session):
         eval_result_queue = mp.JoinableQueue()
@@ -199,16 +201,16 @@ class TransE:
         for _ in range(n_used_eval_triple):
             head_rank_raw, tail_rank_raw, head_rank_filter, tail_rank_filter = rank_result_queue.get()
             head_meanrank_raw += head_rank_raw
-            if head_rank_raw < 10:
+            if head_rank_raw < self.hit_at_n:
                 head_hits10_raw += 1
             tail_meanrank_raw += tail_rank_raw
-            if tail_rank_raw < 10:
+            if tail_rank_raw < self.hit_at_n:
                 tail_hits10_raw += 1
             head_meanrank_filter += head_rank_filter
-            if head_rank_filter < 10:
+            if head_rank_filter < self.hit_at_n:
                 head_hits10_filter += 1
             tail_meanrank_filter += tail_rank_filter
-            if tail_rank_filter < 10:
+            if tail_rank_filter < self.hit_at_n:
                 tail_hits10_filter += 1
         print('-----Raw-----')
         head_meanrank_raw /= n_used_eval_triple
@@ -216,11 +218,11 @@ class TransE:
         tail_meanrank_raw /= n_used_eval_triple
         tail_hits10_raw /= n_used_eval_triple
         print('-----Head prediction-----')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format(head_meanrank_raw, head_hits10_raw))
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format(head_meanrank_raw, self.hit_at_n, head_hits10_raw))
         print('-----Tail prediction-----')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format(tail_meanrank_raw, tail_hits10_raw))
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format(tail_meanrank_raw, self.hit_at_n, tail_hits10_raw))
         print('------Average------')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format((head_meanrank_raw + tail_meanrank_raw) / 2,
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format((head_meanrank_raw + tail_meanrank_raw) / 2, self.hit_at_n,
                                                          (head_hits10_raw + tail_hits10_raw) / 2))
         print('-----Filter-----')
         head_meanrank_filter /= n_used_eval_triple
@@ -228,11 +230,11 @@ class TransE:
         tail_meanrank_filter /= n_used_eval_triple
         tail_hits10_filter /= n_used_eval_triple
         print('-----Head prediction-----')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format(head_meanrank_filter, head_hits10_filter))
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format(head_meanrank_filter, self.hit_at_n, head_hits10_filter))
         print('-----Tail prediction-----')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format(tail_meanrank_filter, tail_hits10_filter))
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format(tail_meanrank_filter, self.hit_at_n, tail_hits10_filter))
         print('-----Average-----')
-        print('MeanRank: {:.3f}, Hits@10: {:.3f}'.format((head_meanrank_filter + tail_meanrank_filter) / 2,
+        print('MeanRank: {:.3f}, Hits@{}: {:.3f}'.format((head_meanrank_filter + tail_meanrank_filter) / 2, self.hit_at_n,
                                                          (head_hits10_filter + tail_hits10_filter) / 2))
         print('cost time: {:.3f}s'.format(timeit.default_timer() - start))
         print('-----Finish evaluation-----')

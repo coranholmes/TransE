@@ -9,5 +9,6 @@ python main.py \
 --learning_rate 0.01 \
 --n_generator 24 \
 --n_rank_calculator 24 \
+--hit_at_n 5 \
 --eval_freq 100 \
 --max_epoch 5000

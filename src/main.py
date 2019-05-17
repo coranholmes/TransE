@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--learning_rate', type=float, default=0.001)
     parser.add_argument('--n_generator', type=int, default=24)
     parser.add_argument('--n_rank_calculator', type=int, default=24)
+    parser.add_argument('--hit_at_n', type=int, default=10)
     parser.add_argument('--ckpt_dir', type=str, default='../ckpt/')
     parser.add_argument('--summary_dir', type=str, default='../summary/')
     parser.add_argument('--max_epoch', type=int, default=500)
@@ -25,7 +26,7 @@ def main():
     kg = KnowledgeGraph(data_dir=args.data_dir)
     kge_model = TransE(kg=kg, model_path=args.ckpt_dir,embedding_dim=args.embedding_dim, margin_value=args.margin_value,
                        score_func=args.score_func, batch_size=args.batch_size, learning_rate=args.learning_rate,
-                       n_generator=args.n_generator, n_rank_calculator=args.n_rank_calculator)
+                       n_generator=args.n_generator, n_rank_calculator=args.n_rank_calculator, hit_at_n=args.hit_at_n)
     gpu_config = tf.GPUOptions(allow_growth=True)
     sess_config = tf.ConfigProto(gpu_options=gpu_config)
     if args.mode == 'test':
